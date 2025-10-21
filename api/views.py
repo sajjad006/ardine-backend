@@ -1,7 +1,7 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Restaurant, Dish, Order
+from .models import Restaurant, Dish, Order, ChatSession
 from .serializers import RestaurantSerializer, DishSerializer, OrderSerializer
 from .permissions import IsRestaurantOwner
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -62,12 +62,26 @@ class OrderViewSet(viewsets.ModelViewSet):
 
 
 class VirtualWaiterView(APIView):
-    authentication_classes = []      # Disable DRF authentication
-    permission_classes = [AllowAny]  # Make endpoint public
+    """
+    POST /api/assistant/chat/
+    Body:
+    {
+        "restaurant_id": "<uuid>",
+        "user_query": "user message",
+        "session_id": "<optional chat session id>"
+    }
+
+    Returns structured chat response with context, intent, and updated cart.
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
     def post(self, request):
         try:
             restaurant_id = request.data.get("restaurant_id")
             user_query = request.data.get("user_query")
+            session_id = request.data.get("session_id")
 
             if not restaurant_id or not user_query:
                 return Response(
@@ -75,33 +89,21 @@ class VirtualWaiterView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            try:
-                restaurant = Restaurant.objects.get(id=restaurant_id)
-            except Restaurant.DoesNotExist:
-                return Response({"error": "Restaurant not found."},
-                                status=status.HTTP_404_NOT_FOUND)
+            # 1️⃣ Create or load ChatSession
+            chat_session = None
+            if session_id:
+                chat_session = ChatSession.objects.filter(id=session_id).first()
+            if not chat_session:
+                chat_session = ChatSession.objects.create(restaurant_id=restaurant_id)
 
-            # ✅ Step 1: Retrieve relevant dishes
+            chat_history = chat_session.history
+            cart = chat_session.cart
+
+            # 2️⃣ Retrieve relevant dishes from Chroma
             retrieved_docs = retrieve_menu_items(restaurant_id, user_query, k=5)
-
-            if not retrieved_docs:
-                return Response({
-                    "reply": "I'm sorry, I couldn't find matching dishes for your query.",
-                    "context_items": []
-                })
-
-            # ✅ Step 2: Build context string
-            menu_context = "\n".join([
-                f"{d['meta']['name']} | Price: ₹{d['meta']['price']} | Calories: {d['meta']['calories']} | Tags: {d['meta']['tags']}"
-                for d in retrieved_docs
-            ])
-
-            # ✅ Step 3: Generate waiter-like response using Groq LLM
-            reply = generate_response(restaurant.name, menu_context, user_query)
-
-            # ✅ Step 4: Build structured list of context items for frontend
             context_items = [
                 {
+                    "id": d["meta"]["item_id"],
                     "name": d["meta"]["name"],
                     "price": d["meta"]["price"],
                     "calories": d["meta"]["calories"],
@@ -109,16 +111,99 @@ class VirtualWaiterView(APIView):
                 }
                 for d in retrieved_docs
             ]
+            menu_context = "\n".join([
+                f"{d['meta']['name']} | ₹{d['meta']['price']} | {d['meta']['calories']} kcal | {d['meta']['tags']}"
+                for d in retrieved_docs
+            ])
 
-            # ✅ Step 5: Return response
-            return Response({
-                "restaurant": restaurant.name,
-                "reply": reply,
+            restaurant = Restaurant.objects.get(id=restaurant_id)
+
+            # 3️⃣ Generate structured LLM response (intent + reply + items)
+            result = generate_response(
+                restaurant.name,
+                menu_context,
+                user_query,
+                chat_history,
+                cart
+            )
+
+            intent = result.get("intent", "chat")
+            reply = result.get("reply", "")
+            mentioned_items = [name.lower() for name in result.get("items", [])]
+
+            # 4️⃣ Execute intents
+            if intent == "add_to_cart":
+                added = []
+                for item in context_items:
+                    if item["name"].lower() in mentioned_items:
+                        cart.append({
+                            "dish_id": item["id"],
+                            "name": item["name"],
+                            "price": item["price"],
+                            "qty": 1
+                        })
+                        added.append(item["name"])
+                if added:
+                    chat_session.cart = cart
+                    reply = f"✅ Added {', '.join(added)} to your cart."
+
+            elif intent == "describe_dish":
+                described = []
+                for item in context_items:
+                    if item["name"].lower() in mentioned_items:
+                        dish = Dish.objects.filter(
+                            name__iexact=item["name"],
+                            restaurant_id=restaurant_id
+                        ).first()
+                        if dish:
+                            reply = (
+                                f"{dish.name}: {dish.description or 'No description available.'} "
+                                f"(₹{dish.price}, {dish.calories or 'N/A'} kcal)"
+                            )
+                            described.append(dish.name)
+                if not described and not reply:
+                    reply = "Could you clarify which dish you'd like me to describe?"
+
+            elif intent == "confirm_order":
+                if not cart:
+                    reply = "Your cart is empty. Please add some dishes first."
+                else:
+                    total = sum(float(i["price"]) * i["qty"] for i in cart)
+                    order = Order.objects.create(
+                        restaurant_id=restaurant_id,
+                        items=cart,
+                        total=total,
+                        status="pending",
+                        customer_name="Guest",
+                        table_number="Virtual"
+                    )
+                    chat_session.cart = []
+                    reply = f"🧾 Your order (#{order.id}) has been placed! Total ₹{total:.2f}."
+
+            # 5️⃣ Update memory (history)
+            chat_history.append({"role": "user", "content": user_query})
+            chat_history.append({
+                "role": "assistant",
+                "content": reply,
+                "intent": intent,
                 "context_items": context_items
             })
+            chat_session.history = chat_history
+            chat_session.save()
+
+            # 6️⃣ Final structured response
+            return Response({
+                "session_id": str(chat_session.id),
+                "intent": intent,
+                "reply": reply,
+                "context_items": context_items,
+                "cart": chat_session.cart,
+                "history": chat_session.history[-5:]  # last few turns
+            })
+
+        except Restaurant.DoesNotExist:
+            return Response({"error": "Restaurant not found."}, status=404)
 
         except Exception as e:
-            return Response(
-                {"error": f"Unexpected error: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return Response({"error": str(e)}, status=500)
+

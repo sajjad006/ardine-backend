@@ -68,3 +68,12 @@ class OrderItem(models.Model):
 
     def __str__(self):
         return f"{self.name} x {self.quantity}"
+
+class ChatSession(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
+    restaurant_id = models.UUIDField()
+    history = models.JSONField(default=list)  # [{"role": "user", "content": "..."}]
+    cart = models.JSONField(default=list)     # [{"dish_id": "...", "name": "...", "qty": 2, "price": 200}]
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)

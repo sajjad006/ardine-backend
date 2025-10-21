@@ -3,6 +3,7 @@ import os
 from groq import Groq
 import textwrap
 from dotenv import load_dotenv
+import json
 
 load_dotenv()
 
@@ -12,7 +13,7 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 MODEL_NAME = "openai/gpt-oss-20b"
 
 
-def build_prompt(restaurant_name: str, menu_context: str, user_query: str) -> str:
+def build_prompt(restaurant_name: str, menu_context: str, user_query: str, chat_history=None, cart=None) -> str:
     """
     Construct a clean, instruction-style prompt for Groq LLM.
 
@@ -24,30 +25,48 @@ def build_prompt(restaurant_name: str, menu_context: str, user_query: str) -> st
     Returns:
         A formatted text prompt.
     """
-    prompt = textwrap.dedent(f"""
-        You are a friendly and knowledgeable virtual waiter for the restaurant "{restaurant_name}".
+    chat_log = ""
+    if chat_history:
+        for turn in chat_history[-5:]:
+            chat_log += f"{turn['role'].capitalize()}: {turn['content']}\n"
 
-        Use the following menu context to answer the customer's question accurately and politely.
+    cart_summary = ""
+    if cart:
+        items = [f"{c['name']} (x{c['qty']})" for c in cart]
+        cart_summary = f"Current Cart: {', '.join(items)}\n"
 
+    prompt = f"""
+        You are a friendly virtual waiter for "{restaurant_name}".
+        Use the menu and conversation to assist the customer.
+
+        Conversation so far:
+        {chat_log}
+
+        {cart_summary}
         Menu Context:
         {menu_context}
 
-        Customer Query:
-        "{user_query}"
+        Customer says: "{user_query}"
 
-        Guidelines:
-        - Recommend dishes that match the customer's preferences.
-        - Mention dish name, price, and calories (if available).
-        - Keep responses short, conversational, and natural.
-        - Never invent menu items not in the context.
-        - Offer at most 2–3 recommendations.
+        You must respond in JSON only with this exact structure:
+        {{
+        "intent": "chat" | "add_to_cart" | "describe_dish" | "confirm_order",
+        "reply": "your natural language response to the customer",
+        "items": ["list of dishes the user mentioned or referred to, if any"]
+        }}
 
-        Respond as if you're chatting with a customer.
-    """).strip()
-    return prompt
+        Rules:
+        - If user asks to add something → intent = add_to_cart.
+        - If user asks about a dish → intent = describe_dish.
+        - If user confirms or finalizes → intent = confirm_order.
+        - Otherwise → intent = chat.
+    """
+    return prompt.strip()
 
 
-def generate_response(restaurant_name: str, menu_context: str, user_query: str) -> str:
+
+
+def generate_response(restaurant_name: str, menu_context: str, user_query: str, chat_session=None, cart=None) -> str:
     """
     Generate the waiter response using Groq-hosted LLM.
 
@@ -59,7 +78,7 @@ def generate_response(restaurant_name: str, menu_context: str, user_query: str) 
     Returns:
         str: Natural waiter-style reply.
     """
-    prompt = build_prompt(restaurant_name, menu_context, user_query)
+    prompt = build_prompt(restaurant_name, menu_context, user_query, chat_session, cart)
 
     response = client.chat.completions.create(
         model=MODEL_NAME,
@@ -71,8 +90,16 @@ def generate_response(restaurant_name: str, menu_context: str, user_query: str) 
         max_tokens=500,
     )
 
-    reply = response.choices[0].message.content.strip()
-    return reply
+    text = response.choices[0].message.content.strip()
+
+    # Try parsing model output as JSON
+    try:
+        result = json.loads(text)
+    except Exception:
+        result = {"intent": "chat", "reply": text, "items": []}
+
+    return result
+
 
 
 # ✅ Optional CLI test
