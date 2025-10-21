@@ -62,7 +62,9 @@ MIDDLEWARE = [
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # react dev
     "http://localhost:5173",  # vite dev
-    "http://192.168.29.165:5173"
+    "http://192.168.29.165:5173",
+    "https://ardine.food",
+    "https://www.ardine.food"
 ]
 
 ROOT_URLCONF = 'arbackend.urls'
