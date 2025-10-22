@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Restaurant, Dish, Order, OrderItem
+from .models import Restaurant, Dish, Order, OrderItem, Category
 from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 
@@ -8,51 +8,6 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ("id", "username", "email")
 
-# class OrderSerializer(serializers.ModelSerializer):
-#     items = OrderItemSerializer(many=True)
-
-#     class Meta:
-#         model = Order
-#         fields = [
-#             "id",
-#             "restaurant",
-#             "total",
-#             "status",
-#             "customer_name",
-#             "table_number",
-#             "created_at",
-#             "items",
-#         ]
-#         read_only_fields = ["status", "created_at"]
-
-#     def create(self, validated_data):
-#         items_data = validated_data.pop("items")
-#         print(validated_data, items_data)
-#         order = Order.objects.create(**validated_data)
-
-#         for item_data in items_data:
-#             # ✅ Fix: handle both 'dish' and 'id' keys from frontend
-#             dish_id = item_data.get("id")
-#             name = item_data.get("name")
-#             price = item_data.get("price")
-#             quantity = item_data.get("qty") or item_data.get("quantity", 1)
-
-#             try:
-#                 dish = Dish.objects.get(id=dish_id)
-#             except ObjectDoesNotExist:
-#                 print("helloooooo", dish_id)
-#                 raise serializers.ValidationError(f"Dish with ID {dish_id} not found")
-
-
-#             OrderItem.objects.create(
-#                 order=order,
-#                 dish=dish,
-#                 name=name,
-#                 price=price,
-#                 quantity=quantity,
-#             )
-
-#         return order
 
 
 # ─────────────────────────────────────────────
@@ -62,10 +17,12 @@ class UserSerializer(serializers.ModelSerializer):
 class DishSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField()
     model_3d = serializers.SerializerMethodField()
+    category_name = serializers.CharField(source="category.name", read_only=True)
+
 
     class Meta:
         model = Dish
-        fields = ("id","restaurant","name","description","price","image","model_3d","is_active","created_at", "category", "calories", "tags", "ingredients",)
+        fields = ("id","restaurant","name","description","price","image","model_3d","is_active","created_at", "category", "calories", "tags", "ingredients", "category_name",)
 
     def get_image(self, obj):
         if obj.image:
@@ -76,6 +33,25 @@ class DishSerializer(serializers.ModelSerializer):
         if obj.model_3d:
             return self.context['request'].build_absolute_uri(obj.model_3d.url)
         return None
+
+
+class CategorySerializer(serializers.ModelSerializer):
+    restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
+    dishes = DishSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Category
+        fields = [
+            "id",
+            "restaurant",
+            "restaurant_name",
+            "name",
+            "description",
+            "image",
+            "is_active",
+            "order_priority",
+            "dishes",
+        ]
 
 
 

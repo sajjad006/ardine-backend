@@ -19,6 +19,25 @@ class Restaurant(models.Model):
 
     def __str__(self):
         return self.name
+    
+class Category(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="categories"
+    )
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    image = models.ImageField(upload_to="restaurant/categories/", null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+    order_priority = models.PositiveIntegerField(default=0, help_text="Used for ordering categories in menu display")
+
+    class Meta:
+        unique_together = ("restaurant", "name")
+        ordering = ["order_priority", "name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.restaurant.name})"
 
 class Dish(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -27,10 +46,11 @@ class Dish(models.Model):
     description = models.TextField(blank=True)
     price = models.DecimalField(max_digits=8, decimal_places=2)
     image = models.ImageField(upload_to=dish_image_upload_path, null=True, blank=True)
+    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name="dishes")
     model_3d = models.FileField(upload_to=dish_model_upload_path, null=True, blank=True)  # .glb/.usdz
     created_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
-    category = models.CharField(max_length=100, blank=True)  # e.g., 'main', 'starter'
+    # category = models.CharField(max_length=100, blank=True)  # e.g., 'main', 'starter'
     calories = models.IntegerField(null=True, blank=True)
     tags = models.JSONField(default=list, blank=True)  # e.g. ["spicy","vegan"]
     ingredients = models.JSONField(default=list, blank=True)  # e.g. ["chicken", "tomato"]
@@ -77,3 +97,4 @@ class ChatSession(models.Model):
     cart = models.JSONField(default=list)     # [{"dish_id": "...", "name": "...", "qty": 2, "price": 200}]
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+

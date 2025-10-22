@@ -42,7 +42,9 @@ def build_prompt(restaurant_name: str, menu_context: str, user_query: str, chat_
         Conversation so far:
         {chat_log}
 
+        Items currently in cart:
         {cart_summary}
+
         Menu Context:
         {menu_context}
 

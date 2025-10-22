@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Restaurant, Dish, Order, OrderItem
+from .models import Restaurant, Dish, Order, OrderItem, Category
 
 
 # -----------------------------
@@ -50,6 +50,21 @@ class RestaurantAdmin(admin.ModelAdmin):
             return format_html('<img src="{}" width="120" height="40" style="object-fit:cover;border-radius:4px;"/>', obj.banner.url)
         return "—"
     banner_preview.short_description = "Banner"
+
+
+@admin.register(Category)
+class CategoryAdmin(admin.ModelAdmin):
+    list_display = ("name", "restaurant", "is_active", "order_priority", "image_preview")
+    list_filter = ("restaurant", "is_active")
+    search_fields = ("name", "restaurant__name")
+    inlines = [DishInline]
+
+    def image_preview(self, obj):
+        if obj.image:
+            return format_html('<img src="{}" width="80" height="60" style="border-radius:6px;" />', obj.image.url)
+        return "—"
+
+    image_preview.short_description = "Image Preview"
 
 
 # -----------------------------
