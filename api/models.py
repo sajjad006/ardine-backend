@@ -1,6 +1,10 @@
 from django.db import models
 from django.contrib.auth.models import User
 import uuid
+from django.db.models.signals import post_save, post_delete
+from django.dispatch import receiver
+from django.db.models import Avg, Count
+
 
 def dish_image_upload_path(instance, filename):
     return f"restaurants/{instance.restaurant.id}/images/{filename}"
@@ -16,6 +20,16 @@ class Restaurant(models.Model):
     logo = models.ImageField(upload_to="restaurant/logos/", null=True, blank=True)
     banner = models.ImageField(upload_to="restaurant/banners/", null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def average_rating(self):
+        agg = getattr(self, "rating_summary", None)
+        return round(agg.average_rating, 1) if agg and agg.average_rating is not None else 0.0
+
+    @property
+    def total_reviews(self):
+        agg = getattr(self, "rating_summary", None)
+        return agg.total_reviews if agg else 0
 
     def __str__(self):
         return self.name
@@ -54,6 +68,17 @@ class Dish(models.Model):
     calories = models.IntegerField(null=True, blank=True)
     tags = models.JSONField(default=list, blank=True)  # e.g. ["spicy","vegan"]
     ingredients = models.JSONField(default=list, blank=True)  # e.g. ["chicken", "tomato"]
+    chef_special = models.BooleanField(default=False)
+
+    @property
+    def average_rating(self):
+        agg = getattr(self, "rating_summary", None)
+        return round(agg.average_rating, 1) if agg and agg.average_rating is not None else 0.0
+
+    @property
+    def total_reviews(self):
+        agg = getattr(self, "rating_summary", None)
+        return agg.total_reviews if agg else 0
 
     def __str__(self):
         return f"{self.name} - {self.restaurant.name}"
@@ -98,3 +123,69 @@ class ChatSession(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+def update_rating_summary(instance):
+    if instance.dish:
+        dish = instance.dish
+        agg, _ = RatingAggregate.objects.get_or_create(dish=dish)
+        summary = Review.objects.filter(dish=dish).aggregate(avg=Avg("rating"), count=Count("id"))
+        agg.average_rating = summary["avg"] or 0
+        agg.total_reviews = summary["count"]
+        agg.save()
+
+    elif instance.restaurant:
+        restaurant = instance.restaurant
+        agg, _ = RatingAggregate.objects.get_or_create(restaurant=restaurant)
+        summary = Review.objects.filter(restaurant=restaurant).aggregate(avg=Avg("rating"), count=Count("id"))
+        agg.average_rating = summary["avg"] or 0
+        agg.total_reviews = summary["count"]
+        agg.save()
+
+class Review(models.Model):
+    """
+    Stores individual user reviews for either a restaurant or a dish.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="reviews")
+    restaurant = models.ForeignKey("Restaurant", on_delete=models.CASCADE, related_name="reviews", null=True, blank=True)
+    dish = models.ForeignKey("Dish", on_delete=models.CASCADE, related_name="reviews", null=True, blank=True)
+
+    rating = models.PositiveSmallIntegerField(default=0)  # 1–5
+    comment = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_verified = models.BooleanField(default=False)  # e.g., verified if ordered before
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(check=models.Q(rating__gte=0) & models.Q(rating__lte=5), name="rating_range_check"),
+        ]
+
+    def __str__(self):
+        target = self.dish.name if self.dish else self.restaurant.name if self.restaurant else "Unknown"
+        return f"{self.user} - {target} ({self.rating}/5)"
+
+class RatingAggregate(models.Model):
+    """
+    Caches average ratings for performance (reduces expensive aggregation queries).
+    Automatically updated when new reviews are added.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    restaurant = models.OneToOneField("Restaurant", on_delete=models.CASCADE, related_name="rating_summary", null=True, blank=True)
+    dish = models.OneToOneField("Dish", on_delete=models.CASCADE, related_name="rating_summary", null=True, blank=True)
+    average_rating = models.FloatField(default=0.0)
+    total_reviews = models.PositiveIntegerField(default=0)
+
+    def __str__(self):
+        target = self.dish.name if self.dish else self.restaurant.name
+        return f"{target}: {self.average_rating:.1f}⭐ ({self.total_reviews} reviews)"
+
+
+@receiver(post_save, sender=Review)
+def update_rating_on_save(sender, instance, **kwargs):
+    update_rating_summary(instance)
+
+
+@receiver(post_delete, sender=Review)
+def update_rating_on_delete(sender, instance, **kwargs):
+    update_rating_summary(instance)

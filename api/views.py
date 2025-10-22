@@ -1,8 +1,8 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Restaurant, Dish, Order, ChatSession
-from .serializers import RestaurantSerializer, DishSerializer, OrderSerializer
+from .models import Restaurant, Dish, Order, ChatSession, RatingAggregate, Review, Category
+from .serializers import RestaurantSerializer, DishSerializer, OrderSerializer, RatingAggregateSerializer, ReviewSerializer, CategorySerializer
 from .permissions import IsRestaurantOwner
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.views import APIView
@@ -59,6 +59,39 @@ class OrderViewSet(viewsets.ModelViewSet):
         if self.request.method == "POST":
             return [permissions.AllowAny()]  # allow customers to place orders
         return [permissions.IsAuthenticated()]
+
+class ReviewViewSet(viewsets.ModelViewSet):
+    queryset = Review.objects.all().select_related("restaurant", "dish")
+    serializer_class = ReviewSerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        dish_id = self.request.query_params.get("dish")
+        restaurant_id = self.request.query_params.get("restaurant")
+        qs = self.queryset
+        if dish_id:
+            qs = qs.filter(dish_id=dish_id)
+        if restaurant_id:
+            qs = qs.filter(restaurant_id=restaurant_id)
+        return qs.order_by("-created_at")
+
+
+class RatingAggregateViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = RatingAggregate.objects.all().select_related("restaurant", "dish")
+    serializer_class = RatingAggregateSerializer
+    permission_classes = [AllowAny]
+
+class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Category.objects.all().select_related("restaurant")
+    serializer_class = CategorySerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+            queryset = super().get_queryset()
+            restaurant_id = self.request.query_params.get("restaurant")
+            if restaurant_id:
+                queryset = queryset.filter(restaurant_id=restaurant_id)
+            return queryset.order_by("order_priority")
 
 
 class VirtualWaiterView(APIView):

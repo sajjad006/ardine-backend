@@ -74,7 +74,7 @@ class CategoryAdmin(admin.ModelAdmin):
 class DishAdmin(admin.ModelAdmin):
     list_display = (
         "name", "restaurant", "category", "price",
-        "calories", "is_active", "image_preview", "created_at"
+        "calories", "is_active", "chef_special", "image_preview", "created_at"
     )
     list_filter = ("restaurant", "category", "is_active")
     search_fields = ("name", "description", "tags", "ingredients")
@@ -88,7 +88,7 @@ class DishAdmin(admin.ModelAdmin):
         ("Dish Details", {
             "fields": (
                 "restaurant", "name", "description",
-                "category", "price", "is_active"
+                "category", "price", "is_active", "chef_special"
             )
         }),
         ("Media", {

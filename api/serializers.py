@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Restaurant, Dish, Order, OrderItem, Category
+from .models import Restaurant, Dish, Order, OrderItem, Category, Review, RatingAggregate
 from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 
@@ -18,11 +18,31 @@ class DishSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField()
     model_3d = serializers.SerializerMethodField()
     category_name = serializers.CharField(source="category.name", read_only=True)
-
+    # average_rating = serializers.ReadOnlyField(source="average_rating")
+    # total_reviews = serializers.ReadOnlyField(source="total_reviews")
 
     class Meta:
         model = Dish
-        fields = ("id","restaurant","name","description","price","image","model_3d","is_active","created_at", "category", "calories", "tags", "ingredients", "category_name",)
+        fields = (
+            "id",
+            "restaurant",
+            "name",
+            "description",
+            "price",
+            "image",
+            "model_3d",
+            "is_active",
+            "chef_special",
+            "created_at",
+            "category",
+            "calories",
+            "tags",
+            "ingredients",
+            "category_name",
+            "average_rating",
+            "total_reviews",
+        )
+
 
     def get_image(self, obj):
         if obj.image:
@@ -65,10 +85,22 @@ class RestaurantSerializer(serializers.ModelSerializer):
     dishes = DishSerializer(many=True, read_only=True)
     logo = serializers.SerializerMethodField()
     banner = serializers.SerializerMethodField()
+    # average_rating = serializers.ReadOnlyField(source="average_rating")
+    # total_reviews = serializers.ReadOnlyField(source="total_reviews")
 
     class Meta:
         model = Restaurant
-        fields = ("id","owner","name","tagline","logo","banner","dishes")
+        fields = (
+            "id",
+            "owner",
+            "name",
+            "tagline",
+            "logo",
+            "banner",
+            "average_rating",
+            "total_reviews",
+            "dishes",
+        )
 
     def get_logo(self, obj):
         if obj.logo:
@@ -79,6 +111,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
         if obj.banner:
             return self.context['request'].build_absolute_uri(obj.banner.url)
         return None
+
 
 
 # ─────────────────────────────────────────────
@@ -178,3 +211,35 @@ class OrderSerializer(serializers.ModelSerializer):
             instance.items.all(), many=True, context=self.context
         ).data
         return representation
+
+
+class ReviewSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source="user.username", read_only=True)
+    target_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Review
+        fields = [
+            "id",
+            "user_name",
+            "restaurant",
+            "dish",
+            "rating",
+            "comment",
+            "is_verified",
+            "created_at",
+            "target_name",
+        ]
+
+    def get_target_name(self, obj):
+        if obj.dish:
+            return obj.dish.name
+        if obj.restaurant:
+            return obj.restaurant.name
+        return None
+
+
+class RatingAggregateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RatingAggregate
+        fields = ["average_rating", "total_reviews",]
