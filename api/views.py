@@ -6,6 +6,7 @@ from .models import Restaurant, Dish, Order, ChatSession, RatingAggregate, Revie
 from .serializers import RestaurantSerializer, DishSerializer, OrderSerializer, RatingAggregateSerializer, ReviewSerializer, CategorySerializer
 from .permissions import IsRestaurantOwner
 from rest_framework.parsers import MultiPartParser, FormParser
+from django.db.models import Case, When, Value, IntegerField
 from rest_framework.views import APIView
 from api.retrieval import retrieve_menu_items
 from api.llm import generate_response
@@ -52,6 +53,7 @@ class DishViewSet(viewsets.ModelViewSet):
         if restaurant:
             qs = qs.filter(restaurant__id=restaurant)
         return qs
+    
 
 class OrderViewSet(viewsets.ModelViewSet):
     queryset = Order.objects.all().order_by("-created_at")
@@ -61,6 +63,28 @@ class OrderViewSet(viewsets.ModelViewSet):
         if self.request.method == "POST":
             return [permissions.AllowAny()]  # allow customers to place orders
         return [permissions.IsAuthenticated()]
+
+    def get_queryset(self):
+        user = self.request.user
+        queryset = Order.objects.filter(restaurant__owner=user)
+
+        # Define your custom order preference
+        status_order = Case(
+            When(status="pending", then=Value(1)),
+            When(status="accepted", then=Value(2)),
+            When(status="preparing", then=Value(3)),
+            When(status="served", then=Value(4)),
+            When(status="cancelled", then=Value(5)),
+            default=Value(6),
+            output_field=IntegerField(),
+        )
+
+        # Apply custom ordering (pending → accepted → preparing → served → cancelled)
+        queryset = queryset.annotate(
+            status_order=status_order
+        ).order_by("status_order", "-created_at")
+
+        return queryset
 
 class ReviewViewSet(viewsets.ModelViewSet):
     queryset = Review.objects.all().select_related("restaurant", "dish")

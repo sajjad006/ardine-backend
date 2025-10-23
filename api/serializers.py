@@ -179,7 +179,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "table_number",
             "items",
         ]
-        read_only_fields = ["status", "created_at"]
+        read_only_fields = ["created_at"]
 
     def create(self, validated_data):
         items_data = validated_data.pop("items", [])
