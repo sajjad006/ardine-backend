@@ -15,11 +15,13 @@ class UserSerializer(serializers.ModelSerializer):
 # ─────────────────────────────────────────────
 
 class DishSerializer(serializers.ModelSerializer):
-    image = serializers.SerializerMethodField()
-    model_3d = serializers.SerializerMethodField()
+    image = serializers.ImageField(required=False, allow_null=True)
+    model_3d = serializers.FileField(required=False, allow_null=True)
+
+    # image_url = serializers.SerializerMethodField()
+    # model_3d_url = serializers.SerializerMethodField()
+
     category_name = serializers.CharField(source="category.name", read_only=True)
-    # average_rating = serializers.ReadOnlyField(source="average_rating")
-    # total_reviews = serializers.ReadOnlyField(source="total_reviews")
 
     class Meta:
         model = Dish
@@ -29,8 +31,10 @@ class DishSerializer(serializers.ModelSerializer):
             "name",
             "description",
             "price",
-            "image",
-            "model_3d",
+            "image",         # writable (upload)
+            # "image_url",     # read-only (absolute URL)
+            "model_3d",      # writable
+            # "model_3d_url",  # read-only
             "is_active",
             "chef_special",
             "created_at",
@@ -43,17 +47,21 @@ class DishSerializer(serializers.ModelSerializer):
             "total_reviews",
         )
 
+    # def get_image_url(self, obj):
+    #     request = self.context.get('request')
+    #     if obj.image:
+    #         if request:
+    #             return request.build_absolute_uri(obj.image.url)
+    #         return obj.image.url  # fallback
+    #     return None
 
-    def get_image(self, obj):
-        if obj.image:
-            return self.context['request'].build_absolute_uri(obj.image.url)
-        return None
-
-    def get_model_3d(self, obj):
-        if obj.model_3d:
-            return self.context['request'].build_absolute_uri(obj.model_3d.url)
-        return None
-
+    # def get_model_3d_url(self, obj):
+    #     request = self.context.get('request')
+    #     if obj.model_3d:
+    #         if request:
+    #             return request.build_absolute_uri(obj.model_3d.url)
+    #         return obj.model_3d.url  # fallback
+    #     return None
 
 class CategorySerializer(serializers.ModelSerializer):
     restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
@@ -83,8 +91,9 @@ class CategorySerializer(serializers.ModelSerializer):
 class RestaurantSerializer(serializers.ModelSerializer):
     owner = UserSerializer(read_only=True)
     dishes = DishSerializer(many=True, read_only=True)
-    logo = serializers.SerializerMethodField()
-    banner = serializers.SerializerMethodField()
+    logo = serializers.ImageField(required=False, allow_null=True)
+    banner = serializers.ImageField(required=False, allow_null=True)
+
     # average_rating = serializers.ReadOnlyField(source="average_rating")
     # total_reviews = serializers.ReadOnlyField(source="total_reviews")
 
@@ -101,16 +110,6 @@ class RestaurantSerializer(serializers.ModelSerializer):
             "total_reviews",
             "dishes",
         )
-
-    def get_logo(self, obj):
-        if obj.logo:
-            return self.context['request'].build_absolute_uri(obj.logo.url)
-        return None
-
-    def get_banner(self, obj):
-        if obj.banner:
-            return self.context['request'].build_absolute_uri(obj.banner.url)
-        return None
 
 
 

@@ -1,7 +1,7 @@
 from rest_framework import routers
 from .views import RestaurantViewSet, DishViewSet, OrderViewSet, ReviewViewSet, RatingAggregateViewSet, CategoryViewSet
 from django.urls import path, include
-from api.views import VirtualWaiterView
+from api.views import VirtualWaiterView, my_restaurant
 
 router = routers.DefaultRouter()
 router.register(r"restaurants", RestaurantViewSet)
@@ -14,5 +14,6 @@ router.register(r"categories", CategoryViewSet, basename="category")
 
 urlpatterns = [
     path("", include(router.urls)),
+    path("me/", my_restaurant, name="my-restaurant"),
     path("chat/", VirtualWaiterView.as_view(), name="virtual_waiter"),
 ]

@@ -1,5 +1,6 @@
 from rest_framework import viewsets, permissions, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .models import Restaurant, Dish, Order, ChatSession, RatingAggregate, Review, Category
 from .serializers import RestaurantSerializer, DishSerializer, OrderSerializer, RatingAggregateSerializer, ReviewSerializer, CategorySerializer
@@ -16,6 +17,7 @@ class RestaurantViewSet(viewsets.ModelViewSet):
     queryset = Restaurant.objects.all()
     serializer_class = RestaurantSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    parser_classes = (MultiPartParser, FormParser)
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
@@ -93,6 +95,18 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
                 queryset = queryset.filter(restaurant_id=restaurant_id)
             return queryset.order_by("order_priority")
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def my_restaurant(request):
+    try:
+        restaurant = Restaurant.objects.get(owner=request.user)
+        serializer = RestaurantSerializer(restaurant, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Restaurant.DoesNotExist:
+        return Response(
+            {"detail": "No restaurant found for this owner."},
+            status=status.HTTP_404_NOT_FOUND
+        )
 
 class VirtualWaiterView(APIView):
     """
