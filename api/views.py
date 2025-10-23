@@ -2,7 +2,7 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from .models import Restaurant, Dish, Order, ChatSession, RatingAggregate, Review, Category
+from .models import Restaurant, Dish, Order, ChatSession, RatingAggregate, Review, Category, OrderItem
 from .serializers import RestaurantSerializer, DishSerializer, OrderSerializer, RatingAggregateSerializer, ReviewSerializer, CategorySerializer
 from .permissions import IsRestaurantOwner
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -12,6 +12,11 @@ from api.retrieval import retrieve_menu_items
 from api.llm import generate_response
 import json
 from rest_framework.permissions import AllowAny
+from datetime import timedelta
+from django.db.models import Sum
+from django.utils import timezone
+from django.db.models.functions import TruncDate
+from django.db.models import Count, F
 
 
 class RestaurantViewSet(viewsets.ModelViewSet):
@@ -30,7 +35,7 @@ class DishViewSet(viewsets.ModelViewSet):
     parser_classes = (MultiPartParser, FormParser)  # file upload support
 
     def get_permissions(self):
-        # safe methods: anyone
+        # safe methods: anyoneF
         if self.request.method in permissions.SAFE_METHODS:
             return [permissions.AllowAny()]
         return [permissions.IsAuthenticated()]
@@ -131,6 +136,68 @@ def my_restaurant(request):
             {"detail": "No restaurant found for this owner."},
             status=status.HTTP_404_NOT_FOUND
         )
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def owner_dashboard_summary(request):
+    user = request.user
+    restaurant = user.restaurants.first()
+    if not restaurant:
+        return Response({"detail":"No restaurant"}, status=404)
+
+    now = timezone.now()
+    start_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    last_24 = now - timedelta(hours=24)
+
+    sales_today = Order.objects.filter(restaurant=restaurant, created_at__gte=start_day).aggregate(Sum('total'))['total__sum'] or 0
+    orders_today = Order.objects.filter(restaurant=restaurant, created_at__gte=start_day).count()
+    pending_count = Order.objects.filter(restaurant=restaurant, status='pending').count()
+    new_24 = Order.objects.filter(restaurant=restaurant, created_at__gte=last_24).count()
+
+    return Response({
+        "sales_today": sales_today,
+        "orders_today": orders_today,
+        "pending": pending_count,
+        "new_last_24h": new_24,
+    })
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def sales_trend(request):
+    days = int(request.query_params.get('days', 7))
+    user = request.user
+    restaurant = user.restaurants.first()
+    start = timezone.now().date() - timedelta(days=days-1)
+
+    qs = (Order.objects.filter(restaurant=restaurant, created_at__date__gte=start)
+          .annotate(day=TruncDate('created_at'))
+          .values('day')
+          .annotate(total=Sum('total'))
+          .order_by('day'))
+    # normalize to include missing days client-side or server-side
+    return Response(list(qs))
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def orders_by_status(request):
+    user = request.user
+    restaurant = user.restaurants.first()
+    qs = Order.objects.filter(restaurant=restaurant).values('status').annotate(count=Count('id'))
+    return Response(list(qs))
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def top_dishes(request):
+    days = int(request.query_params.get('days', 30))
+    limit = int(request.query_params.get('limit', 6))
+    restaurant = request.user.restaurants.first()
+    since = timezone.now() - timedelta(days=days)
+    # join OrderItem -> Order -> Restaurant
+    qs = (OrderItem.objects.filter(order__restaurant=restaurant, order__created_at__gte=since)
+          .values('dish', 'name')
+          .annotate(total_qty=Sum('quantity'), total_revenue=Sum(F('price')*F('quantity')))
+          .order_by('-total_qty')[:limit])
+    return Response(list(qs))
 
 class VirtualWaiterView(APIView):
     """
