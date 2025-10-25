@@ -35,6 +35,7 @@ class DishSerializer(serializers.ModelSerializer):
             # "image_url",     # read-only (absolute URL)
             "model_3d",      # writable
             # "model_3d_url",  # read-only
+            "video",          # writable
             "is_active",
             "chef_special",
             "created_at",

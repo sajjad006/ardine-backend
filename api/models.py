@@ -4,7 +4,7 @@ import uuid
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.db.models import Avg, Count
-
+from django.core.validators import FileExtensionValidator
 
 def dish_image_upload_path(instance, filename):
     return f"restaurants/{instance.restaurant.id}/images/{filename}"
@@ -62,6 +62,7 @@ class Dish(models.Model):
     image = models.ImageField(upload_to=dish_image_upload_path, null=True, blank=True)
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name="dishes")
     model_3d = models.FileField(upload_to=dish_model_upload_path, null=True, blank=True)  # .glb/.usdz
+    video = models.FileField(upload_to='dish_videos/', null=True, blank=True, validators=[FileExtensionValidator(allowed_extensions=['mp4', 'mov', 'webm'])])
     created_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
     # category = models.CharField(max_length=100, blank=True)  # e.g., 'main', 'starter'
