@@ -74,7 +74,7 @@ class CategoryAdmin(admin.ModelAdmin):
 class DishAdmin(admin.ModelAdmin):
     list_display = (
         "name", "restaurant", "category", "price",
-        "calories", "is_active", "chef_special", "image_preview", "created_at"
+        "calories", "is_active", "chef_special", "image_preview", "created_at", "video"
     )
     list_filter = ("restaurant", "category", "is_active")
     search_fields = ("name", "description", "tags", "ingredients")
@@ -92,7 +92,7 @@ class DishAdmin(admin.ModelAdmin):
             )
         }),
         ("Media", {
-            "fields": ("image", "image_preview", "model_3d", "model_link"),
+            "fields": ("image", "image_preview", "model_3d", "model_link", "video"),
             "description": "Upload a food image and optionally a 3D model (.glb/.usdz)."
         }),
         ("Nutrition & Ingredients", {
