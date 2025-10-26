@@ -22,7 +22,7 @@ from django.db.models import Count, F
 class RestaurantViewSet(viewsets.ModelViewSet):
     queryset = Restaurant.objects.all()
     serializer_class = RestaurantSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    # permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     parser_classes = (MultiPartParser, FormParser)
 
     def perform_create(self, serializer):
@@ -31,14 +31,14 @@ class RestaurantViewSet(viewsets.ModelViewSet):
 class DishViewSet(viewsets.ModelViewSet):
     queryset = Dish.objects.select_related("restaurant").all()
     serializer_class = DishSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    # permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     parser_classes = (MultiPartParser, FormParser)  # file upload support
 
-    def get_permissions(self):
-        # safe methods: anyoneF
-        if self.request.method in permissions.SAFE_METHODS:
-            return [permissions.AllowAny()]
-        return [permissions.IsAuthenticated()]
+    # def get_permissions(self):
+    #     # safe methods: anyoneF
+    #     if self.request.method in permissions.SAFE_METHODS:
+    #         return [permissions.AllowAny()]
+    #     return [permissions.IsAuthenticated()]
 
     def perform_create(self, serializer):
         # enforce restaurant ownership
