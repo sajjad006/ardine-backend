@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.db import models
 from django.contrib.auth.models import User
 import uuid
@@ -5,6 +6,10 @@ from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.db.models import Avg, Count
 from django.core.validators import FileExtensionValidator
+import os
+from django.template.loader import render_to_string
+from weasyprint import HTML
+from arbackend import settings
 
 def dish_image_upload_path(instance, filename):
     return f"restaurants/{instance.restaurant.id}/images/{filename}"
@@ -70,6 +75,8 @@ class Dish(models.Model):
     tags = models.JSONField(default=list, blank=True)  # e.g. ["spicy","vegan"]
     ingredients = models.JSONField(default=list, blank=True)  # e.g. ["chicken", "tomato"]
     chef_special = models.BooleanField(default=False)
+    gst_rate = models.DecimalField(max_digits=5, decimal_places=2, default=5.0)
+    discount_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0.0)
 
     @property
     def average_rating(self):
@@ -111,9 +118,92 @@ class OrderItem(models.Model):
     name = models.CharField(max_length=200)  # snapshot name
     price = models.DecimalField(max_digits=8, decimal_places=2)  # snapshot price
     quantity = models.PositiveIntegerField(default=1)
+    gst_rate = models.DecimalField(max_digits=5, decimal_places=2, default=5.0)
+    discount_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0.0)
+
+    def subtotal(self):
+        return self.price * self.quantity
+
+    def discount_amount(self):
+        return (self.subtotal() * self.discount_percent) / Decimal(100)
+
+    def taxable_amount(self):
+        return self.subtotal() - self.discount_amount()
+
+    def gst_amount(self):
+        return (self.taxable_amount() * self.gst_rate) / Decimal(100)
+
+    def total_with_gst(self):
+        return self.taxable_amount() + self.gst_amount()
 
     def __str__(self):
         return f"{self.name} x {self.quantity}"
+
+    def __str__(self):
+        return f"{self.name} x {self.quantity}"
+
+class Invoice(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name="invoice")
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+    total_discount = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+    total_gst = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+    bill_discount_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0.0)
+    bill_discount_flat = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)  # new field
+    pdf = models.FileField(upload_to="invoices/", null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    @classmethod
+    def generate_invoice(cls, order, bill_discount_percent=0, bill_discount_flat=0):
+        items = order.items.all()
+
+        subtotal = sum([item.subtotal() for item in items])
+        item_discounts = sum([item.discount_amount() for item in items])
+        item_gst = sum([item.gst_amount() for item in items])
+
+        taxable = subtotal - item_discounts
+
+        # Calculate both discount types
+        bill_discount_percent_value = (taxable * Decimal(bill_discount_percent)) / Decimal(100)
+        bill_discount_total = bill_discount_percent_value + Decimal(bill_discount_flat)
+
+        total_discount = item_discounts + bill_discount_total
+        gst_total = item_gst
+        total_amount = taxable - bill_discount_total + gst_total
+
+        invoice = cls.objects.create(
+            order=order,
+            subtotal=subtotal,
+            total_discount=total_discount,
+            total_gst=gst_total,
+            total_amount=total_amount,
+            bill_discount_percent=bill_discount_percent,
+            bill_discount_flat=bill_discount_flat,
+        )
+        return invoice
+    
+    def generate_pdf(self):
+        """Render and save the invoice as PDF."""
+        context = {
+            "invoice": self,
+            "order": self.order,
+            "items": self.order.items.all(),
+            "restaurant": self.order.restaurant,
+        }
+
+        html_string = render_to_string("invoices/invoice_template.html", context)
+        pdf_file_path = os.path.join(settings.MEDIA_ROOT, f"invoices/{self.id}.pdf")
+
+        os.makedirs(os.path.dirname(pdf_file_path), exist_ok=True)
+        HTML(string=html_string, base_url=settings.MEDIA_ROOT).write_pdf(pdf_file_path)
+
+        self.pdf.name = f"invoices/{self.id}.pdf"
+        self.save(update_fields=["pdf"])
+        return self.pdf.url
+
+    def __str__(self):
+        return f"Invoice {self.id} for {self.order.restaurant.name}"
 
 class ChatSession(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -190,3 +280,9 @@ def update_rating_on_save(sender, instance, **kwargs):
 @receiver(post_delete, sender=Review)
 def update_rating_on_delete(sender, instance, **kwargs):
     update_rating_summary(instance)
+
+@receiver(post_save, sender=Order)
+def create_invoice_on_served(sender, instance, **kwargs):
+    if instance.status == "served" and not hasattr(instance, "invoice"):
+        invoice = Invoice.generate_invoice(order=instance)
+        invoice.generate_pdf()

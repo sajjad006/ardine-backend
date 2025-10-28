@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Restaurant, Dish, Order, OrderItem, Category, Review, RatingAggregate
+from .models import Invoice, Restaurant, Dish, Order, OrderItem, Category, Review, RatingAggregate
 from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 
@@ -162,11 +162,19 @@ class OrderItemSerializer(serializers.ModelSerializer):
         return super().to_internal_value(data)
 
 
+
+class InvoiceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Invoice
+        fields = ["id", "pdf", "total_amount", "created_at"]
+
+
 # ─────────────────────────────────────────────
 # ORDER SERIALIZER
 # ─────────────────────────────────────────────
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True)
+    invoice = InvoiceSerializer(read_only=True)
 
     class Meta:
         model = Order
@@ -178,6 +186,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "created_at",
             "customer_name",
             "table_number",
+            "invoice",
             "items",
         ]
         read_only_fields = ["created_at"]

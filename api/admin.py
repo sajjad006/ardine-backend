@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Restaurant, Dish, Order, OrderItem, Category
+from .models import Invoice, Restaurant, Dish, Order, OrderItem, Category
 
 
 # -----------------------------
@@ -163,7 +163,14 @@ class OrderAdmin(admin.ModelAdmin):
 
 @admin.register(OrderItem)
 class OrderItemAdmin(admin.ModelAdmin):
-    list_display = ("order", "name", "price", "quantity", "dish")
+    list_display = ("order", "name", "price", "quantity", "dish", "gst_rate", "discount_percent")
     search_fields = ("order__id", "name", "dish__name")
     list_filter = ("dish__restaurant",)
-    readonly_fields = ("order", "name", "price", "quantity", "dish")
+    readonly_fields = ("order", "name", "price", "quantity", "dish", "gst_rate", "discount_percent")
+
+@admin.register(Invoice)
+class InvoiceAdmin(admin.ModelAdmin):
+    list_display = ("id", "order", "subtotal", "total_discount", "total_gst", "total_amount", "created_at")
+    search_fields = ("order__id",)
+    readonly_fields = ("id", "order", "subtotal", "total_discount", "total_gst", "total_amount", "bill_discount_percent", "created_at")
+
